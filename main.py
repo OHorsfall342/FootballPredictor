@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from datetime import datetime
+import csv
 
 
 class FootballNN(nn.Module):
@@ -10,7 +11,7 @@ class FootballNN(nn.Module):
         super(FootballNN, self).__init__()
         self.fc1 = nn.Linear(input_size, hidden_size)
         self.fc2 = nn.Linear(hidden_size, hidden_size)
-        self.out = nn.Linear(hidden_size, 2)  # λ_home, λ_away
+        self.out = nn.Linear(hidden_size, 2)  # score_home, score_away
         self.relu = nn.ReLU()
         self.leaky_relu = nn.LeakyReLU(negative_slope=0.01)
 
@@ -18,14 +19,32 @@ class FootballNN(nn.Module):
         x = self.relu(self.fc1(x))
         x = self.relu(self.fc2(x))
         x = self.out(x)
-        return torch.exp(x)  # keep λ > 0
+        return torch.exp(x)  # keep > 0
 
 
-class FootballTable(string filename):
-    this.name = "a"
+class FootballTable():
+    def __init__ (self, filename):
+            self.data = {}  # dictionary: {column_name: [values...]}
+            self.games = 0
+            with open(filename, newline='', encoding='utf-8') as f:
+                reader = csv.DictReader(f)   # reads rows as dicts
+                for row in reader:
+                    self.games += 1
+                    for key, value in row.items():
+                        if key not in self.data:
+                            self.data[key] = []
+                        self.data[key].append(value)
+            
+            
+
+    def get_column(self, colname):
+        return self.data.get(colname, [])
+
+    def get_row(self, idx):
+        return {col: self.data[col][idx] for col in self.data}
+
 
 class FootballTeam():
-    
     def __init__(self, teamname):
         self.name = teamname
         self.ppg = 0.0
