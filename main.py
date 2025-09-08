@@ -7,7 +7,7 @@ import csv
 
 
 class FootballNN(nn.Module):
-    def __init__(self, input_size=16, hidden_size=64):
+    def __init__(self, input_size=10, hidden_size=64):
         super(FootballNN, self).__init__()
         self.fc1 = nn.Linear(input_size, hidden_size)
         self.fc2 = nn.Linear(hidden_size, hidden_size)
@@ -16,8 +16,8 @@ class FootballNN(nn.Module):
         self.leaky_relu = nn.LeakyReLU(negative_slope=0.01)
 
     def forward(self, x):
-        x = self.relu(self.fc1(x))
-        x = self.relu(self.fc2(x))
+        x = self.leaky_relu(self.fc1(x))
+        x = self.leaky_relu(self.fc2(x))
         x = self.out(x)
         return torch.exp(x)  # keep > 0
 
@@ -25,7 +25,9 @@ class FootballNN(nn.Module):
 class FootballTable():
     def __init__ (self, filename):
             self.data = {}  # dictionary: {column_name: [values...]}
+            self.teams = []
             self.games = 0
+            recentloss = [1] * 10
             with open(filename, newline='', encoding='utf-8') as f:
                 reader = csv.DictReader(f)   # reads rows as dicts
                 for row in reader:
@@ -35,14 +37,61 @@ class FootballTable():
                             self.data[key] = []
                         self.data[key].append(value)
             
+    def train(self, model):
+        teamnames = self.get_unique("HomeTeam")
+        self.teams = {name: FootballTeam(name) for name in teamnames}#dictionary so that teams can be directly accessed
+
+        for i in range (len(teamnames) * 5):#insures 5 matches for each team
+            currentdata = self.get_row(i, ["HomeTeam", "AwayTeam", "FTHG", "FTAG", "Date"])
+            self.teams[currentdata[0]].addmatch(currentdata[2], currentdata[3], currentdata[4]) #input the homegoals, away goals and date
+            self.teams[currentdata[1]].addmatch(currentdata[3], currentdata[2], currentdata[4]) #input the homegoals, away goals and date
+
+        for i in range((len(teamnames))*5, (len(teamnames) * (len(teamnames)-1))):#total matches is 20x19 e.g.
+            currentdata = self.get_row(i, ["HomeTeam", "AwayTeam", "FTHG", "FTAG", "Date"])
+            hometeamdata = self.teams[currentdata[0]].returndata(currentdata[4])
+            awayteamdata = self.teams[currentdata[1]].returndata(currentdata[4])#ppg, scoredpg, concededpg, form_score, datedifference
+
+            loss_fn = nn.MSELoss()   # Phase 1: regression loss
+            optimizer = optim.Adam(model.parameters(), lr=0.001)
+
+            X = hometeamdata + awayteamdata
+            y = [currentdata[2], currentdata[3]]
+
+            # Training loop
+
+            pred = model(X)                  # forward
+            loss = loss_fn(pred, y)          # compute loss
             
+            self.recentloss.pop(0)
+            self.recentloss.append(loss.item())
+
+
+            optimizer.zero_grad()            # clear old gradients
+            loss.backward()                  # backprop
+            optimizer.step()                 # update weights
+
+            if (i+1) % 10 == 0:
+                    print(f"match {i+1}, Avg Loss: {sum(self.recentloss)/len(self.recentloss)}")
+
+            self.teams[currentdata[0]].addmatch(currentdata[2], currentdata[3], currentdata[4]) #input the homegoals, away goals and date
+            self.teams[currentdata[1]].addmatch(currentdata[3], currentdata[2], currentdata[4]) #input the homegoals, away goals and date
+
+
+
 
     def get_column(self, colname):
         return self.data.get(colname, [])
+    
+    def get_unique(self, colname):
+        return list(set(self.data[colname]))
 
-    def get_row(self, idx):
-        return {col: self.data[col][idx] for col in self.data}
-
+    def get_row(self, id, fields=None):#table.get_row(1, ["HomeTeam", "AwayTeam", "FTHG", FTAG])
+        if fields:
+            # Only return selected fields
+            return {col: self.data[col][id] for col in fields}
+        else:
+            # Return full row
+            return {col: self.data[col][id] for col in self.data}
 
 class FootballTeam():
     def __init__(self, teamname):
@@ -99,19 +148,20 @@ if __name__ == "__main__":#main allows for direct running with running when impo
     X = torch.randn(10, 16) #x is the dataset, so 10 matches with 40 pieces of data each
     y = torch.tensor([[1,0],[2,1],[0,0],[3,1],[1,2],[2,2],[0,1],[1,3],[2,1],[1,1]], dtype=torch.float) #results of the matches
 
+    pl24 = FootballTable("pl24.csv")
     model = FootballNN()
     print(model)
-    loss_fn = nn.MSELoss()   # Phase 1: regression loss
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    #loss_fn = nn.MSELoss()   # Phase 1: regression loss
+    #optimizer = optim.Adam(model.parameters(), lr=0.001)
 
     # Training loop
-    for epoch in range(500):
-        pred = model(X)                  # forward
-        loss = loss_fn(pred, y)          # compute loss
-
-        optimizer.zero_grad()            # clear old gradients
-        loss.backward()                  # backprop
-        optimizer.step()                 # update weights
-
-        if (epoch+1) % 10 == 0:
-            print(f"Epoch {epoch+1}, Loss: {loss.item():.4f}")
+    #for epoch in range(500):
+    #    pred = model(X)                  # forward
+    #    loss = loss_fn(pred, y)          # compute loss
+#
+    #    optimizer.zero_grad()            # clear old gradients
+    #    loss.backward()                  # backprop
+    #    optimizer.step()                 # update weights
+#
+    #    if (epoch+1) % 10 == 0:
+    #        print(f"Epoch {epoch+1}, Loss: {loss.item():.4f}")
