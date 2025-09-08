@@ -27,7 +27,8 @@ class FootballTable():
             self.data = {}  # dictionary: {column_name: [values...]}
             self.teams = []
             self.games = 0
-            recentloss = [1] * 10
+            self.recentloss = [1] * 10
+            self.recentresults = [0] * 30
             with open(filename, newline='', encoding='utf-8') as f:
                 reader = csv.DictReader(f)   # reads rows as dicts
                 for row in reader:
@@ -40,27 +41,53 @@ class FootballTable():
     def train(self, model):
         teamnames = self.get_unique("HomeTeam")
         self.teams = {name: FootballTeam(name) for name in teamnames}#dictionary so that teams can be directly accessed
+        loss_fn = nn.MSELoss()   # Phase 1: regression loss
+        optimizer = optim.Adam(model.parameters(), lr=0.001)
 
         for i in range (len(teamnames) * 5):#insures 5 matches for each team
             currentdata = self.get_row(i, ["HomeTeam", "AwayTeam", "FTHG", "FTAG", "Date"])
-            self.teams[currentdata[0]].addmatch(currentdata[2], currentdata[3], currentdata[4]) #input the homegoals, away goals and date
-            self.teams[currentdata[1]].addmatch(currentdata[3], currentdata[2], currentdata[4]) #input the homegoals, away goals and date
+            self.teams[currentdata["HomeTeam"]].addmatch(currentdata["FTHG"], currentdata["FTAG"], currentdata["Date"]) #input the homegoals, away goals and date
+            self.teams[currentdata["AwayTeam"]].addmatch(currentdata["FTAG"], currentdata["FTHG"], currentdata["Date"]) #input the homegoals, away goals and date
 
         for i in range((len(teamnames))*5, (len(teamnames) * (len(teamnames)-1))):#total matches is 20x19 e.g.
             currentdata = self.get_row(i, ["HomeTeam", "AwayTeam", "FTHG", "FTAG", "Date"])
-            hometeamdata = self.teams[currentdata[0]].returndata(currentdata[4])
-            awayteamdata = self.teams[currentdata[1]].returndata(currentdata[4])#ppg, scoredpg, concededpg, form_score, datedifference
+            hometeamdata = self.teams[currentdata["HomeTeam"]].returndata(currentdata["Date"])
+            awayteamdata = self.teams[currentdata["AwayTeam"]].returndata(currentdata["Date"])#ppg, scoredpg, concededpg, form_score, datedifference
+            if int(currentdata["FTHG"]) > int(currentdata["FTAG"]):
+                trueresult = 0
+            elif int(currentdata["FTHG"]) == int(currentdata["FTAG"]):
+                trueresult = 1
+            else:
+                trueresult = 2#2 means away win, 1 draw, 0 home win
 
-            loss_fn = nn.MSELoss()   # Phase 1: regression loss
-            optimizer = optim.Adam(model.parameters(), lr=0.001)
+            
 
-            X = hometeamdata + awayteamdata
-            y = [currentdata[2], currentdata[3]]
+            X = torch.tensor(hometeamdata + awayteamdata, dtype=torch.float32)  # shape [num_features]
+            y = torch.tensor([float(currentdata["FTHG"]), float(currentdata["FTAG"])],
+                 dtype=torch.float32)  # shape [2]
 
             # Training loop
 
             pred = model(X)                  # forward
             loss = loss_fn(pred, y)          # compute loss
+
+            vals = pred.detach().cpu().numpy().flatten()
+            home_goals = int(round(vals[0]))
+            away_goals = int(round(vals[1]))
+
+            if home_goals > away_goals:
+                predresult = 0
+            elif home_goals == away_goals:
+                predresult = 1
+            else:
+                predresult = 2#2 means away win, 1 draw, 0 home win
+
+            self.recentresults.pop(0)
+            if predresult == trueresult:
+                self.recentresults.append(1)
+            else:
+                self.recentresults.append(0)
+
             
             self.recentloss.pop(0)
             self.recentloss.append(loss.item())
@@ -71,10 +98,10 @@ class FootballTable():
             optimizer.step()                 # update weights
 
             if (i+1) % 10 == 0:
-                    print(f"match {i+1}, Avg Loss: {sum(self.recentloss)/len(self.recentloss)}")
+                    print(f"match {i+1}, pred %: {sum(self.recentresults)/len(self.recentresults)}, Avg Loss: {sum(self.recentloss)/len(self.recentloss)}")
 
-            self.teams[currentdata[0]].addmatch(currentdata[2], currentdata[3], currentdata[4]) #input the homegoals, away goals and date
-            self.teams[currentdata[1]].addmatch(currentdata[3], currentdata[2], currentdata[4]) #input the homegoals, away goals and date
+            self.teams[currentdata["HomeTeam"]].addmatch(currentdata["FTHG"], currentdata["FTAG"], currentdata["Date"]) #input the homegoals, away goals and date
+            self.teams[currentdata["AwayTeam"]].addmatch(currentdata["FTAG"], currentdata["FTHG"], currentdata["Date"]) #input the homegoals, away goals and date
 
 
 
@@ -105,9 +132,9 @@ class FootballTeam():
         self.points = 0
 
     def addmatch(self, goalsfor, goalsagainst, date):
-        self.scores += goalsfor
-        self.concedes += goalsagainst
-        self.lastmatch = datetime.strptime(date, "%d-%m-%Y")
+        self.scores += int(goalsfor)
+        self.conceded += int(goalsagainst)
+        self.lastmatch = datetime.strptime(date, "%d/%m/%Y")
         self.matches += 1
 
         if (goalsfor > goalsagainst):
@@ -131,7 +158,7 @@ class FootballTeam():
 
     def returndata(self, date):
         form_score = sum(self.form) / (len(self.form) * 3) if self.form else 0.3
-        datedifference = datetime.strptime(date, "%d-%m-%Y") - self.lastmatch
+        datedifference = (datetime.strptime(date, "%d/%m/%Y") - self.lastmatch).days
         scoredpg = self.scores / self.matches * 3
         concededpg = self.conceded / self.matches * 3 #divide by 3 to keep all values roughly below 1
         ppg = self.points / self.matches * 3
@@ -151,6 +178,7 @@ if __name__ == "__main__":#main allows for direct running with running when impo
     pl24 = FootballTable("pl24.csv")
     model = FootballNN()
     print(model)
+    pl24.train(model)
     #loss_fn = nn.MSELoss()   # Phase 1: regression loss
     #optimizer = optim.Adam(model.parameters(), lr=0.001)
 
