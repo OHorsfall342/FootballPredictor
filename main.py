@@ -196,7 +196,7 @@ if __name__ == "__main__":#main allows for direct running with running when impo
     #pl24.train(model)
 
     for i in range(1, 25):
-        currenttable = FootballTable("E0 (" + str(i) + ").csv")
+        currenttable = FootballTable("databases//E0 (" + str(i) + ").csv")
         currenttable.train(model)
         print("E0 (" + str(i) + ").csv")
         print("\n")
