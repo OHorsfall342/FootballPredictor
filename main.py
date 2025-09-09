@@ -29,7 +29,9 @@ class FootballTable():
             self.games = 0
             self.recentloss = [1] * 10
             self.recentresults = [0] * 30
-            with open(filename, newline='', encoding='utf-8') as f:
+            self.correct = 0
+            self.wrong = 0
+            with open(filename, newline='', encoding="latin-1") as f:
                 reader = csv.DictReader(f)   # reads rows as dicts
                 for row in reader:
                     self.games += 1
@@ -85,8 +87,10 @@ class FootballTable():
             self.recentresults.pop(0)
             if predresult == trueresult:
                 self.recentresults.append(1)
+                self.correct += 1
             else:
                 self.recentresults.append(0)
+                self.wrong += 1
 
             
             self.recentloss.pop(0)
@@ -134,7 +138,7 @@ class FootballTeam():
     def addmatch(self, goalsfor, goalsagainst, date):
         self.scores += int(goalsfor)
         self.conceded += int(goalsagainst)
-        self.lastmatch = datetime.strptime(date, "%d/%m/%Y")
+        self.lastmatch = self.typedate(date)
         self.matches += 1
 
         if (goalsfor > goalsagainst):
@@ -158,12 +162,23 @@ class FootballTeam():
 
     def returndata(self, date):
         form_score = sum(self.form) / (len(self.form) * 3) if self.form else 0.3
-        datedifference = (datetime.strptime(date, "%d/%m/%Y") - self.lastmatch).days
+        datedifference = (self.typedate(date) - self.lastmatch).days
         scoredpg = self.scores / self.matches * 3
         concededpg = self.conceded / self.matches * 3 #divide by 3 to keep all values roughly below 1
         ppg = self.points / self.matches * 3
 
         return [ppg, scoredpg, concededpg, form_score, datedifference]
+    
+    def typedate(self, date):#change the date from a string to a  uniform type date
+        date = date.strip()
+
+        
+        for fmt in ("%d/%m/%Y", "%d/%m/%y"):
+            try:
+                return datetime.strptime(date, fmt)
+            except ValueError:
+                continue
+        raise ValueError(f"Unknown date format: {date}")
 
 
 
@@ -175,10 +190,17 @@ if __name__ == "__main__":#main allows for direct running with running when impo
     X = torch.randn(10, 16) #x is the dataset, so 10 matches with 40 pieces of data each
     y = torch.tensor([[1,0],[2,1],[0,0],[3,1],[1,2],[2,2],[0,1],[1,3],[2,1],[1,1]], dtype=torch.float) #results of the matches
 
-    pl24 = FootballTable("pl24.csv")
+    #pl24 = FootballTable("pl24.csv")
     model = FootballNN()
     print(model)
-    pl24.train(model)
+    #pl24.train(model)
+
+    for i in range(1, 25):
+        currenttable = FootballTable("E0 (" + str(i) + ").csv")
+        currenttable.train(model)
+        print("E0 (" + str(i) + ").csv")
+        print("\n")
+
     #loss_fn = nn.MSELoss()   # Phase 1: regression loss
     #optimizer = optim.Adam(model.parameters(), lr=0.001)
 
