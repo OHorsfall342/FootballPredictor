@@ -7,15 +7,16 @@ import csv
 
 
 class FootballNN(nn.Module):
-    def __init__(self, input_size=10, hidden_size=64):
+    def __init__(self, input_size=10, hidden_size=64):#current inputs are ppg, scoredpg, concededpg, form_score, datedifference for each team
+        #home and away is apssed in implicitly, as the first team is always home, but a flag can be added if necessary
         super(FootballNN, self).__init__()
         self.fc1 = nn.Linear(input_size, hidden_size)
         self.fc2 = nn.Linear(hidden_size, hidden_size)
-        self.out = nn.Linear(hidden_size, 2)  # score_home, score_away
+        self.out = nn.Linear(hidden_size, 2)  # score_home, score_away, current just rounded but could use a poisson distribution later
         self.relu = nn.ReLU()
         self.leaky_relu = nn.LeakyReLU(negative_slope=0.01)
 
-    def forward(self, x):
+    def forward(self, x):#forward pass of the NN
         x = self.leaky_relu(self.fc1(x))
         x = self.leaky_relu(self.fc2(x))
         x = self.out(x)
@@ -25,25 +26,27 @@ class FootballNN(nn.Module):
 class FootballTable():
     def __init__ (self, filename):
             self.data = {}  # dictionary: {column_name: [values...]}
-            self.teams = []
+            self.teams = [] #a list of objects of tyope footballteam
             self.games = 0
-            self.recentloss = [1] * 10
+            self.recentloss = [1] * 10#various variable used to store info for the NN
             self.recentresults = [0] * 30
             self.correct = 0
             self.wrong = 0
-            with open(filename, newline='', encoding="latin-1") as f:
+            with open(filename, newline='', encoding="latin-1") as f:#many football indexes use latin 1 instead of utf-8
                 reader = csv.DictReader(f)   # reads rows as dicts
                 for row in reader:
                     self.games += 1
-                    for key, value in row.items():
+                    for key, value in row.items():#get data from the databases
                         if key not in self.data:
                             self.data[key] = []
                         self.data[key].append(value)
             
+
     def train(self, model):
-        teamnames = self.get_unique("HomeTeam")
-        self.teams = {name: FootballTeam(name) for name in teamnames}#dictionary so that teams can be directly accessed
-        loss_fn = nn.MSELoss()   # Phase 1: regression loss
+        teamnames = self.get_unique("HomeTeam")#get a unique list of teamnames
+        self.teams = {name: FootballTeam(name) for name in teamnames}#dictionary so that teams can be directly accessed, one for  each teamname
+        
+        loss_fn = nn.MSELoss()#for measuring loss to use in backprop   
         optimizer = optim.Adam(model.parameters(), lr=0.001)
 
         for i in range (len(teamnames) * 5):#insures 5 matches for each team
@@ -73,11 +76,11 @@ class FootballTable():
             pred = model(X)                  # forward
             loss = loss_fn(pred, y)          # compute loss
 
-            vals = pred.detach().cpu().numpy().flatten()
+            vals = pred.detach().cpu().numpy().flatten()#round the predictions
             home_goals = int(round(vals[0]))
             away_goals = int(round(vals[1]))
 
-            if home_goals > away_goals:
+            if home_goals > away_goals:#track the predicted and true results
                 predresult = 0
             elif home_goals == away_goals:
                 predresult = 1
@@ -126,7 +129,7 @@ class FootballTable():
 
 class FootballTeam():
     def __init__(self, teamname):
-        self.name = teamname
+        self.name = teamname#variables needed for returning data to the NN
         self.ppg = 0.0
         self.scores = 0
         self.conceded = 0
@@ -136,7 +139,7 @@ class FootballTeam():
         self.points = 0
 
     def addmatch(self, goalsfor, goalsagainst, date):
-        self.scores += int(goalsfor)
+        self.scores += int(goalsfor)#add the data from the database into the object
         self.conceded += int(goalsagainst)
         self.lastmatch = self.typedate(date)
         self.matches += 1
@@ -145,7 +148,7 @@ class FootballTeam():
             self.points += 3
             self.form.append(3)
             if (len(self.form) > 4):
-                self.form.pop(0)
+                self.form.pop(0)#remove oldest data frmn formm
 
         if (goalsfor == goalsagainst):
             self.points += 1
@@ -167,7 +170,7 @@ class FootballTeam():
         concededpg = self.conceded / self.matches * 3 #divide by 3 to keep all values roughly below 1
         ppg = self.points / self.matches * 3
 
-        return [ppg, scoredpg, concededpg, form_score, datedifference]
+        return [ppg, scoredpg, concededpg, form_score, datedifference]#return data in  the expected form for the NN
     
     def typedate(self, date):#change the date from a string to a  uniform type date
         date = date.strip()
@@ -190,16 +193,21 @@ if __name__ == "__main__":#main allows for direct running with running when impo
     X = torch.randn(10, 16) #x is the dataset, so 10 matches with 40 pieces of data each
     y = torch.tensor([[1,0],[2,1],[0,0],[3,1],[1,2],[2,2],[0,1],[1,3],[2,1],[1,1]], dtype=torch.float) #results of the matches
 
+    predavg = []
     #pl24 = FootballTable("pl24.csv")
     model = FootballNN()
     print(model)
     #pl24.train(model)
 
     for i in range(1, 25):
-        currenttable = FootballTable("databases//E0 (" + str(i) + ").csv")
+        p = (26 - i)
+        currenttable = FootballTable("databases//E0 (" + str(p) + ").csv")
         currenttable.train(model)
-        print("E0 (" + str(i) + ").csv")
+        print("E0 (" + str(p) + ").csv")
         print("\n")
+        predavg.append(currenttable.correct / (currenttable.wrong + currenttable.correct))
+
+    print(predavg)
 
     #loss_fn = nn.MSELoss()   # Phase 1: regression loss
     #optimizer = optim.Adam(model.parameters(), lr=0.001)
