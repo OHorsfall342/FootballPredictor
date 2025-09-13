@@ -5,6 +5,9 @@ import torch.optim as optim
 from datetime import datetime
 import csv
 
+totalhome = 0
+totaldraw = 0
+totalaway = 0
 
 class FootballNN(nn.Module):
     def __init__(self, input_size=10, hidden_size=64):#current inputs are ppg, scoredpg, concededpg, form_score, datedifference for each team
@@ -97,6 +100,16 @@ class FootballTable():
                         for ph, pa in valueindex]
 
                 for (pred_val, truth_val) in zip(pred_wdl, truth_batch):
+                    if pred_val == 'H':
+                        global totalhome
+                        totalhome += 1
+                    elif pred_val == 'D':
+                        global totaldraw
+                        totaldraw += 1
+                    else:
+                        global totalaway
+                        totalaway += 1
+
                     if pred_val == truth_val:
                         self.correct += 1
                     else:
@@ -219,10 +232,14 @@ if __name__ == "__main__":#main allows for direct running with running when impo
             print("E0 (" + str(p) + ").csv")
             print("\n")
             predavg.append(currenttable.correct / (currenttable.wrong + currenttable.correct))
+        print(predavg)
+        print(sum(predavg)/len(predavg))
         predavg.clear()
+
+
+    print(totalhome, totaldraw, totalaway)
     
-    print(predavg)
-    print(sum(predavg)/len(predavg))
+
 
     #loss_fn = nn.MSELoss()   # Phase 1: regression loss
     #optimizer = optim.Adam(model.parameters(), lr=0.001)
