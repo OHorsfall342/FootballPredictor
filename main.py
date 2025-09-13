@@ -201,8 +201,14 @@ if __name__ == "__main__":#main allows for direct running with running when impo
 
     for i in range(1, 25):
         p = (26 - i)
+
         currenttable = FootballTable("databases//E0 (" + str(p) + ").csv")
         currenttable.train(model)
+        
+        if (p < 24):#only have 23 spanish databases 
+            currenttable = FootballTable("databases//SP1 (" + str(p) + ").csv")
+            currenttable.train(model)
+        
         print("E0 (" + str(p) + ").csv")
         print("\n")
         predavg.append(currenttable.correct / (currenttable.wrong + currenttable.correct))
