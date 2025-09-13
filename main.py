@@ -19,11 +19,12 @@ class FootballNN(nn.Module):
         self.out = nn.Linear(16, 2)  # score_home, score_away, current just rounded but could use a poisson distribution later
         self.relu = nn.ReLU()
         self.leaky_relu = nn.LeakyReLU(negative_slope=0.01)
+        
 
     def forward(self, x):#forward pass of the NN
         x = self.leaky_relu(self.fc1(x))
         x = self.leaky_relu(self.fc2(x))
-        x = self.leaky_relu(self.fc3(x))
+        x = self.relu(self.fc3(x))#use relu as leaky can cause issues with poisson
         x = self.out(x)
         return torch.exp(x)  # keep > 0
 
@@ -56,7 +57,7 @@ class FootballTable():
 
         BATCH_SIZE = len(teamnames)
         
-        loss_fn = nn.MSELoss()#for measuring loss to use in backprop   
+        loss_fn = nn.PoissonNLLLoss(log_input=False, full=False)#for measuring loss to use in backprop, use poisson 
         optimizer = optim.Adam(model.parameters(), lr=1e-3)
 
         for i in range ((len(teamnames) * 5)//2):#insures 5 matches for each team
