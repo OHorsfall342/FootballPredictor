@@ -11,14 +11,16 @@ class FootballNN(nn.Module):
         #home and away is apssed in implicitly, as the first team is always home, but a flag can be added if necessary
         super(FootballNN, self).__init__()
         self.fc1 = nn.Linear(input_size, hidden_size)
-        self.fc2 = nn.Linear(hidden_size, hidden_size)
-        self.out = nn.Linear(hidden_size, 2)  # score_home, score_away, current just rounded but could use a poisson distribution later
+        self.fc2 = nn.Linear(hidden_size, 32)
+        self.fc3 = nn.Linear(32, 16)
+        self.out = nn.Linear(16, 2)  # score_home, score_away, current just rounded but could use a poisson distribution later
         self.relu = nn.ReLU()
         self.leaky_relu = nn.LeakyReLU(negative_slope=0.01)
 
     def forward(self, x):#forward pass of the NN
         x = self.leaky_relu(self.fc1(x))
         x = self.leaky_relu(self.fc2(x))
+        x = self.leaky_relu(self.fc3(x))
         x = self.out(x)
         return torch.exp(x)  # keep > 0
 
@@ -29,7 +31,6 @@ class FootballTable():
             self.teams = [] #a list of objects of tyope footballteam
             self.games = 0
             self.recentloss = [1] * 10#various variable used to store info for the NN
-            self.recentresults = [0] * 30
             self.correct = 0
             self.wrong = 0
             with open(filename, newline='', encoding="latin-1") as f:#many football indexes use latin 1 instead of utf-8
@@ -45,72 +46,77 @@ class FootballTable():
     def train(self, model):
         teamnames = self.get_unique("HomeTeam")#get a unique list of teamnames
         self.teams = {name: FootballTeam(name) for name in teamnames}#dictionary so that teams can be directly accessed, one for  each teamname
+
+        X = []
+        y = []
+        trueresult = []
+
+        BATCH_SIZE = len(teamnames)
         
         loss_fn = nn.MSELoss()#for measuring loss to use in backprop   
-        optimizer = optim.Adam(model.parameters(), lr=0.001)
+        optimizer = optim.Adam(model.parameters(), lr=1e-3)
 
-        for i in range (len(teamnames) * 5):#insures 5 matches for each team
+        for i in range ((len(teamnames) * 5)//2):#insures 5 matches for each team
             currentdata = self.get_row(i, ["HomeTeam", "AwayTeam", "FTHG", "FTAG", "Date"])
             self.teams[currentdata["HomeTeam"]].addmatch(currentdata["FTHG"], currentdata["FTAG"], currentdata["Date"]) #input the homegoals, away goals and date
             self.teams[currentdata["AwayTeam"]].addmatch(currentdata["FTAG"], currentdata["FTHG"], currentdata["Date"]) #input the homegoals, away goals and date
 
-        for i in range((len(teamnames))*5, (len(teamnames) * (len(teamnames)-1))):#total matches is 20x19 e.g.
+        
+        for i in range(((len(teamnames))*5 // 2), (len(teamnames) * (len(teamnames)-1))):#total matches is 20x19 e.g., start from match 1
             currentdata = self.get_row(i, ["HomeTeam", "AwayTeam", "FTHG", "FTAG", "Date"])
             hometeamdata = self.teams[currentdata["HomeTeam"]].returndata(currentdata["Date"])
             awayteamdata = self.teams[currentdata["AwayTeam"]].returndata(currentdata["Date"])#ppg, scoredpg, concededpg, form_score, datedifference
-            if int(currentdata["FTHG"]) > int(currentdata["FTAG"]):
-                trueresult = 0
-            elif int(currentdata["FTHG"]) == int(currentdata["FTAG"]):
-                trueresult = 1
-            else:
-                trueresult = 2#2 means away win, 1 draw, 0 home win
-
-            
-
-            X = torch.tensor(hometeamdata + awayteamdata, dtype=torch.float32)  # shape [num_features]
-            y = torch.tensor([float(currentdata["FTHG"]), float(currentdata["FTAG"])],
-                 dtype=torch.float32)  # shape [2]
-
-            # Training loop
-
-            pred = model(X)                  # forward
-            loss = loss_fn(pred, y)          # compute loss
-
-            vals = pred.detach().cpu().numpy().flatten()#round the predictions
-            home_goals = int(round(vals[0]))
-            away_goals = int(round(vals[1]))
-
-            if home_goals > away_goals:#track the predicted and true results
-                predresult = 0
-            elif home_goals == away_goals:
-                predresult = 1
-            else:
-                predresult = 2#2 means away win, 1 draw, 0 home win
-
-            self.recentresults.pop(0)
-            if predresult == trueresult:
-                self.recentresults.append(1)
-                self.correct += 1
-            else:
-                self.recentresults.append(0)
-                self.wrong += 1
-
-            
-            self.recentloss.pop(0)
-            self.recentloss.append(loss.item())
-
-
-            optimizer.zero_grad()            # clear old gradients
-            loss.backward()                  # backprop
-            optimizer.step()                 # update weights
-
-            if (i+1) % 10 == 0:
-                    print(f"match {i+1}, pred %: {sum(self.recentresults)/len(self.recentresults)}, Avg Loss: {sum(self.recentloss)/len(self.recentloss)}")
 
             self.teams[currentdata["HomeTeam"]].addmatch(currentdata["FTHG"], currentdata["FTAG"], currentdata["Date"]) #input the homegoals, away goals and date
             self.teams[currentdata["AwayTeam"]].addmatch(currentdata["FTAG"], currentdata["FTHG"], currentdata["Date"]) #input the homegoals, away goals and date
 
+            trueresult.append('H' if int(currentdata["FTHG"]) > int(currentdata["FTAG"]) else 'A' if int(currentdata["FTHG"]) < int(currentdata["FTAG"]) else 'D')
 
+            
+            X.append(hometeamdata + awayteamdata)
+            y.append([float(currentdata["FTHG"]), float(currentdata["FTAG"])])
+            #X = torch.tensor(hometeamdata + awayteamdata, dtype=torch.float32)  # shape [num_features]
+            #y = torch.tensor([float(currentdata["FTHG"]), float(currentdata["FTAG"])],dtype=torch.float32)  # shape [2]
+
+            # Training loop
+            if (len(X) > len(teamnames) - 1):#train once certain amount of data has been collected
+                pred = model(torch.tensor(X))                  # forward
+                loss = loss_fn(pred, torch.tensor(y))          # compute loss
+
+                B = len(X)  # actual batch size
+                truth_batch = trueresult[-B:]  # align truths to this batch
+
+                valueindex = pred.detach().cpu().numpy()#round the predictions
+                #for vals in valueindex:
+
+                    #home_goals = int(round(vals[0]))
+                    #away_goals = int(round(vals[1]))
+
+                pred_wdl = [('H' if int(round(ph)) > int(round(pa))
+                        else 'A' if int(round(ph)) < int(round(pa)) else 'D')
+                        for ph, pa in valueindex]
+
+                for (pred_val, truth_val) in zip(pred_wdl, truth_batch):
+                    if pred_val == truth_val:
+                        self.correct += 1
+                    else:
+                        self.wrong += 1                      
+
+                del trueresult[-B:]
+
+                optimizer.zero_grad()            # clear old gradients
+                loss.backward()                  # backprop
+                optimizer.step()                 # update weights
+
+                self.recentloss.pop(0)
+                self.recentloss.append(loss.item())
+                if (i+1) % 10 == 0:
+                        print(f"match {i+1}, Avg Loss: {sum(self.recentloss)/len(self.recentloss)}")
+
+                
+
+                X.clear()
+                y.clear()
 
 
     def get_column(self, colname):
@@ -198,22 +204,25 @@ if __name__ == "__main__":#main allows for direct running with running when impo
     model = FootballNN()
     print(model)
     #pl24.train(model)
+    for epoch in range (20):#repeat 20 times for extra yummy data
+        for i in range(1, 26):
+            p = (26 - i)
 
-    for i in range(1, 25):
-        p = (26 - i)
-
-        currenttable = FootballTable("databases//E0 (" + str(p) + ").csv")
-        currenttable.train(model)
-        
-        if (p < 24):#only have 23 spanish databases 
-            currenttable = FootballTable("databases//SP1 (" + str(p) + ").csv")
+            currenttable = FootballTable("databases//E0 (" + str(p) + ").csv")
             currenttable.train(model)
-        
-        print("E0 (" + str(p) + ").csv")
-        print("\n")
-        predavg.append(currenttable.correct / (currenttable.wrong + currenttable.correct))
+            predavg.append(currenttable.correct / (currenttable.wrong + currenttable.correct))
 
+            if (p < 24):#only have 23 spanish databases 
+                currenttable = FootballTable("databases//SP1 (" + str(p) + ").csv")
+                currenttable.train(model)
+            
+            print("E0 (" + str(p) + ").csv")
+            print("\n")
+            predavg.append(currenttable.correct / (currenttable.wrong + currenttable.correct))
+        predavg.clear()
+    
     print(predavg)
+    print(sum(predavg)/len(predavg))
 
     #loss_fn = nn.MSELoss()   # Phase 1: regression loss
     #optimizer = optim.Adam(model.parameters(), lr=0.001)
