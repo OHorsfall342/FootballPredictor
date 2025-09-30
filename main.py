@@ -150,6 +150,12 @@ class FootballTable():
             )
 
     def predgame(self, model, home, away, gamedate):
+        hometeamdata = self.teams[home].returndata(gamedate)
+        awayteamdata = self.teams[away].returndata(gamedate)#ppg, scoredpg, concededpg, form_score, datedifference
+
+        X = (hometeamdata + awayteamdata)
+        pred = model(torch.tensor(X))
+        print(pred)
         return 1
 
 
@@ -264,6 +270,7 @@ if __name__ == "__main__":#main allows for direct running with running when impo
     currenttable = FootballTable("databases//currentdb.csv")
     currenttable.loaddata(model)
     predictableteams = list(currenttable.teams.keys())
+    print("PLEASE NOTE: you will need to upload a new upto date database called currentdb.csv from footballdata.com. without this you can only predict whatever data is currently loaded. Only works when the season is greater than 5 games old to allow time to collect data.")
     print(predictableteams)
     hometeam = "placeholder"
     awayteam = "placeholder"
@@ -283,6 +290,8 @@ if __name__ == "__main__":#main allows for direct running with running when impo
             dateformcheck = False
   
         #if not date_str:
+    
+    currenttable.predgame(model, hometeam, awayteam, date_str)
             
 
 
