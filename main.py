@@ -132,6 +132,26 @@ class FootballTable():
                 X.clear()
                 y.clear()
 
+    def loaddata(self, model):
+        teamnames = self.get_unique("HomeTeam")#get a unique list of teamnames
+        self.teams = {name: FootballTeam(name) for name in teamnames}#dictionary so that teams can be directly accessed, one for  each teamname
+
+        for i in range(len(self.data["HomeTeam"])):  # loop over all rows in table
+            currentdata = self.get_row(i, ["HomeTeam", "AwayTeam", "FTHG", "FTAG", "Date"])
+
+            # add match to home team
+            self.teams[currentdata["HomeTeam"]].addmatch(
+                currentdata["FTHG"], currentdata["FTAG"], currentdata["Date"]
+            )
+
+            # add match to away team
+            self.teams[currentdata["AwayTeam"]].addmatch(
+                currentdata["FTAG"], currentdata["FTHG"], currentdata["Date"]
+            )
+
+    def predgame(self, model, home, away, gamedate):
+        return 1
+
 
     def get_column(self, colname):
         return self.data.get(colname, [])
@@ -239,6 +259,33 @@ if __name__ == "__main__":#main allows for direct running with running when impo
 
 
     print(totalhome, totaldraw, totalaway)
+
+    #predict for current season
+    currenttable = FootballTable("databases//currentdb.csv")
+    currenttable.loaddata(model)
+    predictableteams = list(currenttable.teams.keys())
+    print(predictableteams)
+    hometeam = "placeholder"
+    awayteam = "placeholder"
+    dateformcheck = False
+    while (hometeam not in predictableteams) or (awayteam not in predictableteams) or (dateformcheck == False):
+
+        hometeam = input("Enter the home team: ")
+        awayteam = input("Enter the away team: ")
+        date_in = input("Enter the match date (dd/mm/yyyy): ")
+
+        try:
+            date_str = datetime.strptime(date_in, "%d/%m/%Y").strftime("%d/%m/%Y")
+            print(date_str)
+            dateformcheck = True
+            
+        except ValueError:
+            dateformcheck = False
+  
+        #if not date_str:
+            
+
+
     
 
 
