@@ -91,15 +91,19 @@ class FootballTable():
                 B = len(X)  # actual batch size
                 truth_batch = trueresult[-B:]  # align truths to this batch
 
-                valueindex = pred.detach().cpu().numpy()#round the predictions
-                #for vals in valueindex:
+                with torch.no_grad():
+                    # Extract home and away means from the prediction tensor
+                    mu_h = pred[:, 0]   # predicted mean goals for home
+                    mu_a = pred[:, 1]   # predicted mean goals for away
 
-                    #home_goals = int(round(vals[0]))
-                    #away_goals = int(round(vals[1]))
+                    # Compute W/D/L probabilities up to max_goals=10
+                    pH, pD, pA = self.wdl_probs(mu_h, mu_a, max_goals=10)
 
-                pred_wdl = [('H' if int(round(ph)) > int(round(pa))
-                        else 'A' if int(round(ph)) < int(round(pa)) else 'D')
-                        for ph, pa in valueindex]
+                    # Stack them into [B,3], then pick the most likely outcome
+                    probs = torch.stack([pH, pD, pA], dim=1)  # each row = [P(H), P(D), P(A)]
+                    idx = probs.argmax(dim=1).tolist()        # argmax chooses the label index
+                    labels = ['H', 'D', 'A']
+                    pred_wdl = [labels[i] for i in idx]       # convert indices → label chars
 
                 for (pred_val, truth_val) in zip(pred_wdl, truth_batch):
                     if pred_val == 'H':
@@ -154,9 +158,59 @@ class FootballTable():
         hometeamdata = self.teams[home].returndata(gamedate)
         awayteamdata = self.teams[away].returndata(gamedate)#ppg, scoredpg, concededpg, form_score, datedifference
 
+        X_t = torch.tensor(X, dtype=torch.float32)
+        pred = model(X_t)   # shape [2] → predicted means
+        with torch.no_grad():
+            mu = pred.unsqueeze(0)  # make it [1,2] so it works with wdl_probs
+            pH, pD, pA = wdl_probs(mu[:, 0], mu[:, 1], max_goals=10)
+
+            # Print both the mean goals and the W/D/L probabilities
+            print(f"Predicted means: μ_home={mu[0,0].item():.3f}, μ_away={mu[0,1].item():.3f}")
+            print(f"Probabilities → Home: {pH.item():.3f}, Draw: {pD.item():.3f}, Away: {pA.item():.3f}")
         X = (hometeamdata + awayteamdata)
         pred = model(torch.tensor(X))
         print(pred)
+
+    def wdl_probs(self, mu_h, mu_a, max_goals=10):
+    
+        #Compute the probabilities of Home win, Draw, Away win
+        #from Poisson-distributed goal predictions.
+
+        #mu_h, mu_a : torch tensors of shape [B] containing
+        #             the predicted mean goals for home and away.
+        #max_goals  : we truncate the Poisson distribution at this many goals.
+        #             (Football goals are rarely > 6, so 10 is safe.)
+        
+        # Clamp means to be strictly positive (avoid log(0) errors)
+        mu_h = torch.clamp(mu_h, min=1e-6)
+        mu_a = torch.clamp(mu_a, min=1e-6)
+
+        # g = [0, 1, 2, ..., max_goals] → possible goal counts
+        G = torch.arange(0, max_goals + 1, dtype=mu_h.dtype, device=mu_h.device)
+
+        # log(k!) for all k, used to compute Poisson probabilities
+        log_fact = torch.lgamma(G + 1.0)
+
+        # Compute log PMF for home goals for each possible k
+        # log P(H = k) = -μ + k*log μ - log(k!)
+        log_ph = -mu_h.unsqueeze(1) + (G * torch.log(mu_h.unsqueeze(1))) - log_fact
+        log_pa = -mu_a.unsqueeze(1) + (G * torch.log(mu_a.unsqueeze(1))) - log_fact
+
+        # Exponentiate to get actual probabilities
+        ph = torch.exp(log_ph)  # shape [B, G+1]
+        pa = torch.exp(log_pa)  # shape [B, G+1]
+
+        # Joint distribution table: P(H = i, A = j) = ph[i] * pa[j]
+        joint = ph.unsqueeze(2) * pa.unsqueeze(1)  # shape [B, G+1, G+1]
+
+        # Sum over cells where Home > Away (upper triangle)
+        pH = torch.triu(joint, diagonal=1).sum(dim=(1, 2))
+        # Diagonal = Home == Away
+        pD = torch.diagonal(joint, dim1=1, dim2=2).sum(dim=1)
+        # Lower triangle = Away > Home
+        pA = torch.tril(joint, diagonal=-1).sum(dim=(1, 2))
+
+        return pH, pD, pA
         
 
 
@@ -216,8 +270,9 @@ class FootballTeam():
         scoredpg = self.scores / (self.matches * 3)
         concededpg = self.conceded / (self.matches * 3) #divide by 3 to keep all values roughly below 1
         ppg = self.points / (self.matches * 3)
+        standarddatedif = max(0, min(datedifference, 28)) / 28.0#normalised, max 4 weeks
 
-        return [ppg, scoredpg, concededpg, form_score, datedifference]#return data in  the expected form for the NN
+        return [ppg, scoredpg, concededpg, form_score, standarddatedif]#return data in  the expected form for the NN
     
     def typedate(self, date):#change the date from a string to a  uniform type date
         date = date.strip()
