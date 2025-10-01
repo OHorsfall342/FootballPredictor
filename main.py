@@ -13,6 +13,7 @@ class FootballNN(nn.Module):
     def __init__(self, input_size=10, hidden_size=64):#current inputs are ppg, scoredpg, concededpg, form_score, datedifference for each team
         #home and away is apssed in implicitly, as the first team is always home, but a flag can be added if necessary
         super(FootballNN, self).__init__()
+        self.softplus = nn.Softplus()
         self.fc1 = nn.Linear(input_size, hidden_size)
         self.fc2 = nn.Linear(hidden_size, 32)
         self.fc3 = nn.Linear(32, 16)
@@ -26,7 +27,7 @@ class FootballNN(nn.Module):
         x = self.leaky_relu(self.fc2(x))
         x = self.relu(self.fc3(x))#use relu as leaky can cause issues with poisson
         x = self.out(x)
-        return torch.exp(x)  # keep > 0
+        return self.softplus(x)  # keep > 0
 
 
 class FootballTable():
