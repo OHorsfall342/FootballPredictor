@@ -156,7 +156,7 @@ class FootballTable():
         X = (hometeamdata + awayteamdata)
         pred = model(torch.tensor(X))
         print(pred)
-        return 1
+        
 
 
     def get_column(self, colname):
@@ -202,7 +202,7 @@ class FootballTeam():
             if (len(self.form) > 4):
                 self.form.pop(0)
         
-        else:
+        if (goalsfor < goalsagainst):
             self.form.append(0)
             if (len(self.form) > 4):
                 self.form.pop(0)
@@ -212,9 +212,9 @@ class FootballTeam():
     def returndata(self, date):
         form_score = sum(self.form) / (len(self.form) * 3) if self.form else 0.3
         datedifference = (self.typedate(date) - self.lastmatch).days
-        scoredpg = self.scores / self.matches * 3
-        concededpg = self.conceded / self.matches * 3 #divide by 3 to keep all values roughly below 1
-        ppg = self.points / self.matches * 3
+        scoredpg = self.scores / (self.matches * 3)
+        concededpg = self.conceded / (self.matches * 3) #divide by 3 to keep all values roughly below 1
+        ppg = self.points / (self.matches * 3)
 
         return [ppg, scoredpg, concededpg, form_score, datedifference]#return data in  the expected form for the NN
     
