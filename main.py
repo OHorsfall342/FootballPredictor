@@ -100,7 +100,7 @@ class FootballTable():
                 pred_wdl = []
 
                 for (ph, pa) in valueindex:
-                    pred_wdl.append(self.poisson_wdl(ph, pa))
+                    pred_wdl.append(self.poisson_wdl(ph * 1.3, pa))#multiply to force home advantage
 
                         #Change logic to be poisson
 
@@ -274,7 +274,7 @@ if __name__ == "__main__":#main allows for direct running with running when impo
     model = FootballNN()
     print(model)
     #pl24.train(model)
-    for epoch in range (20):#repeat 20 times for extra yummy data
+    for epoch in range (2):#repeat 20 times for extra yummy data
         for i in range(1, 26):
             p = (26 - i)
 
@@ -282,9 +282,9 @@ if __name__ == "__main__":#main allows for direct running with running when impo
             currenttable.train(model)
             predavg.append(currenttable.correct / (currenttable.wrong + currenttable.correct))
 
-            if (p < 24):#only have 23 spanish databases 
-                currenttable = FootballTable("databases//SP1 (" + str(p) + ").csv")
-                currenttable.train(model)
+            #if (p < 24):#only have 23 spanish databases 
+             #   currenttable = FootballTable("databases//SP1 (" + str(p) + ").csv")
+              #  currenttable.train(model)
             
             print("E0 (" + str(p) + ").csv")
             print("\n")
