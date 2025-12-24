@@ -97,9 +97,12 @@ class FootballTable():
                     #home_goals = int(round(vals[0]))
                     #away_goals = int(round(vals[1]))
 
-                pred_wdl = [('H' if int(round(ph)) > int(round(pa))
-                        else 'A' if int(round(ph)) < int(round(pa)) else 'D')
-                        for ph, pa in valueindex]
+                pred_wdl = []
+
+                for (ph, pa) in valueindex:
+                    pred_wdl.append(self.poisson_wdl(ph, pa))
+
+                        #Change logic to be poisson
 
                 for (pred_val, truth_val) in zip(pred_wdl, truth_batch):
                     if pred_val == 'H':
@@ -173,6 +176,31 @@ class FootballTable():
         else:
             # Return full row
             return {col: self.data[col][id] for col in self.data}
+        
+    def poisson_wdl(self, y_home, y_away): # take the poisson predictions and maths the shit out of them
+        lh = torch.tensor(y_home, dtype=torch.float32).clamp_min(1e-8)
+        la = torch.tensor(y_away, dtype=torch.float32).clamp_min(1e-8)
+
+        k = torch.arange(0, 9, dtype=torch.float32)#max goals is 9
+
+        ph = torch.exp(k * torch.log(lh) - lh - torch.lgamma(k + 1))
+        pa = torch.exp(k * torch.log(la) - la - torch.lgamma(k + 1))
+
+        mat = ph[:, None] * pa[None, :]
+
+        p_draw = torch.diagonal(mat).sum()
+        p_home = mat.triu(diagonal=1).sum()
+        p_away = mat.tril(diagonal=-1).sum()
+
+        total = p_home + p_draw + p_away
+        p_home, p_draw, p_away = p_home/total, p_draw/total, p_away/total
+
+        if p_home >= p_draw and p_home >= p_away:
+            return 'H'
+        elif p_draw >= p_away:
+            return 'D'
+        else:
+            return 'A'
 
 class FootballTeam():
     def __init__(self, teamname):
