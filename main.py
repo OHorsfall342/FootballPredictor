@@ -157,8 +157,8 @@ class FootballTable():
         hometeamdata = self.teams[home].returndata(gamedate)
         awayteamdata = self.teams[away].returndata(gamedate)#ppg, scoredpg, concededpg, form_score, datedifference
 
-        X = (hometeamdata + awayteamdata)
-        pred = model(torch.tensor(X))
+        X = torch.tensor([hometeamdata + awayteamdata], dtype=torch.float32)  # (1,10)
+        pred = model(X)
         print(pred)
         
 
@@ -219,19 +219,19 @@ class FootballTeam():
         self.lastmatch = self.typedate(date)
         self.matches += 1
 
-        if (goalsfor > goalsagainst):
+        if (int(goalsfor) > int(goalsagainst)):
             self.points += 3
             self.form.append(3)
             if (len(self.form) > 4):
                 self.form.pop(0)#remove oldest data frmn formm
 
-        if (goalsfor == goalsagainst):
+        if (int(goalsfor) == int(goalsagainst)):
             self.points += 1
             self.form.append(1)
             if (len(self.form) > 4):
                 self.form.pop(0)
         
-        if (goalsfor < goalsagainst):
+        if (int(goalsfor) < int(goalsagainst)):
             self.form.append(0)
             if (len(self.form) > 4):
                 self.form.pop(0)
@@ -241,8 +241,8 @@ class FootballTeam():
     def returndata(self, date):
         form_score = sum(self.form) / (len(self.form) * 3) if self.form else 0.3
         datedifference = (self.typedate(date) - self.lastmatch).days
-        scoredpg = self.scores / (self.matches * 3)
-        concededpg = self.conceded / (self.matches * 3) #divide by 3 to keep all values roughly below 1
+        scoredpg = self.scores / (self.matches)
+        concededpg = self.conceded / (self.matches) #divide by 3 to keep all values roughly below 1
         ppg = self.points / (self.matches * 3)
         standarddatedif = max(0, min(datedifference, 28)) / 28.0
 
